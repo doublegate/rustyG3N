@@ -22,7 +22,7 @@ impl Display {
                 ..WindowOptions::default()
             },
         ).expect("Failed to create window");
-        window.limit_update_rate(Some(std::time::Duration::from_secs_f32(1.0 / 60.0)));
+        window.set_target_fps(60);
         Display { window, width, height }
     }
 

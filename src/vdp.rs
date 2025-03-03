@@ -1,9 +1,7 @@
-use crate::memory::Memory;
-
 // NTSC Genesis timing constants
-const SCANLINES_PER_FRAME: u32 = 262;   // 224 visible + 38 VBlank
-const CYCLES_PER_SCANLINE: u32 = 171;   // Base cycles per scanline (adjusted)
-const VBLANK_START: u32 = 224;
+pub const SCANLINES_PER_FRAME: u32 = 262;   // 224 visible + 38 VBlank
+pub const CYCLES_PER_SCANLINE: u32 = 171;   // Base cycles per scanline (adjusted)
+pub const VBLANK_START: u32 = 224;
 
 pub struct Vdp {
     vram: [u8; 0x10000],     // 64 KB of Video RAM
@@ -206,16 +204,16 @@ impl Vdp {
                     sprite_count += 1;
                 }
             }
-            current = link;
+            current = link as u32;
             if current == 0 { break; }
         }
     }
 
     fn render_sprite_row(&mut self, x_pos: i32, row_in_sprite: i32, h_size: u16, v_size: u16, pattern_index: u16, palette: u16, hflip: bool, vflip: bool, priority: bool, scanline: usize) {
         let tile_y = if vflip {
-            (v_size * 8 - 1 - row_in_sprite as u32)
+            (((v_size as u32) * 8 - 1) - row_in_sprite as u32) as u16
         } else {
-            row_in_sprite as u32
+            row_in_sprite as u16
         };
         let tile_row = tile_y / 8;
         let pixel_y = tile_y % 8;
@@ -226,7 +224,7 @@ impl Vdp {
             let pixel_x = tile_x % 8;
 
             let tile_index = pattern_index + tile_row * h_size + tile_col;
-            let color = self.get_pixel_color(tile_index, pixel_x, pixel_y, palette);
+            let color = self.get_pixel_color(tile_index, pixel_x as u32, pixel_y as u32, palette);
             if color != 0 {
                 let screen_x = x_pos + h as i32;
                 if screen_x >= 0 && screen_x < self.width as i32 {

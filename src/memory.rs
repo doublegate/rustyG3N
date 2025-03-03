@@ -5,6 +5,7 @@ use std::fs::File;
 use std::path::Path;
 use crate::m68k_cpu::{M68kMemory, Exception};
 use crate::z80_cpu::{Z80Memory, IoDevice};
+use crate::vdp::Vdp;
 
 /// A very rough, incomplete memory map for the Sega Genesis 68k side.
 /// For real emulation, you’d need to handle many more regions:
@@ -17,7 +18,7 @@ pub struct GenesisMemory {
     pub rom: Vec<u8>,
     pub ram_68k: [u8; 0x10000], // 64KB 68k RAM at 0xE00000
     pub z80_ram: [u8; 0x2000],  // 8KB Z80 RAM, banked or mirrored
-
+    pub vdp: Vdp,
     // Possibly other devices like VDP, IO, etc.
 }   /// Trait that the 68000 CPU expects
 
@@ -27,6 +28,7 @@ impl GenesisMemory {
             rom: vec![],
             ram_68k: [0; 0x10000],
             z80_ram: [0; 0x2000],
+            vdp: Vdp::new(),
         }
     }
 
@@ -57,7 +59,6 @@ impl GenesisMemory {
 impl M68kMemory for GenesisMemory {
     fn read_byte(&mut self, address: u32) -> Result<u8, Exception> {
         let addr = self.mask_address_68k(address);
-
         match addr {
             0x000000..=0x3FFFFF => {
                 // Cartridge ROM
@@ -108,6 +109,19 @@ impl M68kMemory for GenesisMemory {
         let addr = self.mask_address_68k(address);
 
         match addr {
+            0xC00000..=0xC0001F => {
+                // Write to data port vs control port depends on the lower bits.
+                // We'll treat even offsets (addr & 2 == 0) as data, odd offsets as control:
+                let offset = (addr & 0x1F) >> 1;
+                if offset & 1 == 0 {
+                    // Data port
+                    self.vdp.write_data(value.into());
+                } else {
+                    // Control port
+                    self.vdp.write_control(value as u32);
+                }
+                Ok(())
+            }
             0x000000..=0x3FFFFF => {
                 // Cartridge ROM is read-only; ignore or raise an error
                 Ok(())

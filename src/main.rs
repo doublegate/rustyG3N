@@ -1,12 +1,18 @@
 // src/main.rs
+mod display;
 mod memory;
 mod m68k_cpu;
 mod z80_cpu;
+mod vdp;
 
 use crate::memory::{GenesisMemory, Z80Bus, DummyIoDevice};
 use crate::m68k_cpu::{CPU as M68K, Exception};
 use crate::m68k_cpu::M68kMemory;
 use crate::z80_cpu::{Z80, IoDevice};
+use crate::display::Display;  // <--- ADD
+use crate::vdp::SCANLINES_PER_FRAME; // to access '262'
+use crate::vdp::CYCLES_PER_SCANLINE;
+
 
 use std::env;
 
@@ -75,54 +81,45 @@ fn main() {
     // A dummy I/O device for the Z80
     let mut dummy_io = DummyIoDevice;
 
-    // Typically, you’d reset the Z80's PC, SP, etc. however the Genesis BIOS would do so.
-    // The Z80 is initially held in reset on the real hardware until the 68k writes to certain regs.
-    // For demonstration:
-    z80_cpu.set_sp(0x0100);
-    // PC is default 0x0000, or set as you like
-    // z80_cpu.registers.pc = 0;
+    // Create a 320x224 window to display the VDP output buffer:
+    let mut display = Display::new(320, 224, 1.0);
+    while display.is_open() {
+        // Render one frame (all 262 NTSC scanlines):
+        for line in 0..SCANLINES_PER_FRAME {
+            // Accumulate enough CPU cycles to represent one scanline:
+            let mut line_cycles = 0;
+            while line_cycles < CYCLES_PER_SCANLINE {
+                let cycles_used = m68k_cpu.step();
+                line_cycles += cycles_used as u32;
 
-    // 5. Enter a main loop stepping both CPUs
-    //   - Real Genesis code must synchronize them by cycles (the 68k runs ~7.6MHz, Z80 runs ~3.58MHz).
-    //   - You’d also handle VBlank interrupts, line interrupts, bus arbitration, etc.
-    //   - For now, we just run them in a simple loop.
-    println!("Starting Emulation Loop (... incomplete). Press Ctrl+C to stop.");
+                // Step the Z80 a fraction of that (Z80 ~3.58MHz vs 68k ~7.68MHz):
+                let z80_steps = (cycles_used as f64 * 3.58 / 7.68).ceil() as i32;
+                let mut used_z80 = 0;
+                while used_z80 < z80_steps {
+                    used_z80 += z80_cpu.step(&mut z80_bus, &mut dummy_io) as i32;
+                }
+            }
 
-    let mut total_instructions = 0u64;
-
-    loop {
-        // Step the 68000 by (for example) 200 cycles
-        let mut cycles_used = 0;
-        while cycles_used < 200 {
-            let cycles = m68k_cpu.step();
-            cycles_used += cycles;
-            total_instructions += 1;
-            // In a real emulator, you’d check for interrupts, do VDP checks, etc.
+            // Now tell the VDP to render this scanline:
+            m68k_cpu.memory.vdp.render_scanline(line as usize);
         }
 
-        // Step the Z80 for some fraction of that (Z80 frequency is ~47% of 68k)
-        let mut z80_cycles_used = 0;
-        while z80_cycles_used < (200 * 47 / 100) {
-            // Step 1 instruction
-            let cyc = z80_cpu.step(&mut z80_bus, &mut dummy_io);
-            z80_cycles_used += cyc as i32;
-        }
-
-        // For demonstration, break after some iteration:
-        if total_instructions > 2_000_000 {
-            println!("Stopping after 2,000,000 68k instructions (demo).");
-            break;
-        }
-
-        // You might also insert a small sleep or check for user input, etc.
+        // After finishing all lines, present the result on screen:
+        display.update(
+            m68k_cpu.memory.vdp.get_screen_buffer(),
+            320,
+            224
+        );
     }
 
     println!("Emulation Ended - Success!");
     println!("--------------------------");
+/*
     println!("Final 68k SP: 0x{:08X}", m68k_cpu.a[7]);
     println!("Final 68k PC: 0x{:08X}", m68k_cpu.pc);
     println!("Total 68k Instruct: {}", total_instructions);
     println!("Final Z80 SP: 0x{:04X}", z80_cpu.get_sp());
     println!("Final Z80 PC: 0x{:04X}", z80_cpu.get_pc());
-    // println!("Total Z80 Instruct: {}", z80_cycles_used);
+    println!("Total Z80 Instruct: {}", z80_cycles_used);
+*/
 }
